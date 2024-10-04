@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>ashui-5.0对话模型</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px 0;
+            background: linear-gradient(to left, #74ebd5, #acb6e5);
+        }
+        .container {
+            width: 95%;
+            max-width: 800px;
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        .decoration {
+            position: absolute;
+            top: 20px;
+            bottom: 20px;
+            width: 10px;
+            background: linear-gradient(to bottom, #00796b, #004d40);
+            border-radius: 5px;
+        }
+        .decoration.left {
+            left: -20px;
+        }
+        .decoration.right {
+            right: -20px;
+        }
+        textarea, input[type="text"], button {
+            width: 100%;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 1em;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+        textarea::placeholder {
+            font-size: 0.75em;
+            animation: fadeInOut 2s infinite;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        textarea {
+            height: 120px;
+            resize: none;
+            font-size: 1.5em;
+        }
+        .button {
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        .button:hover {
+            background-color: #1976D2;
+            transform: translateY(-2px);
+        }
+        .button:active {
+            background-color: #0D47A1;
+            transform: translateY(0);
+        }
+        .conversation {
+            height: 200px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+            font-size: 1em;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 100%;
+            word-wrap: break-word;
+            position: relative;
+        }
+        .message.user {
+            background-color: #c8e6c9;
+            align-self: flex-end;
+        }
+        .message.bot {
+            background-color: #fff3cd;
+            align-self: flex-start;
+        }
+        .typing {
+            border-right: .1em solid;
+            white-space: nowrap;
+            overflow: hidden;
+            animation: caret 1s steps(1) infinite;
+        }
+        @keyframes caret {
+            50% {
+                border-color: transparent;
+            }
+        }
+        .announcement {
+            background-color: #ffeb3b;
+            border: 1px solid #fbc02d;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+        .actions {
+            position: absolute;
+            top: -25px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+        }
+        .actions button {
+            background-color: #00796b;
+            color: white;
+            border: none;
+            padding: 3px 5px;
+            font-size: 0.7em;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .actions button:hover {
+            background-color: #004d40;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="decoration left"></div>
+        <div class="decoration right"></div>
+        <h1 style="text-align: center; color: #00796b;">ashui-5.0对话模型</h1>
+        <div class="announcement">
+            仅供测试使用，请勿恶意消耗key的tokens
+        </div>
+        <input type="text" id="apiKey" value="ashui-WZKyVNYvVqkOo05cEtam8PL6T8f36vuxNysDxD0o" placeholder="输入API密钥">
+        <div class="conversation" id="conversation"></div>
+        <textarea id="userInput" placeholder="输入你的问题..."></textarea>
+        <div class="controls">
+            <button class="button" onclick="sendMessage()">发送</button>
+            <button class="button" onclick="abortRequest()">中断回答</button>
+            <button class="button" onclick="clearConversation()">清空聊天记录</button>
+        </div>
+    </div>
+
+    <script>
+        let controller = new AbortController();
+
+        document.getElementById('userInput').addEventListener('keydown', function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput').value;
+            const apiKey = document.getElementById('apiKey').value;
+            const apiUrl = 'https://open.api.ashuiai.cn/v1/chat/completions';
+
+            if (!userInput || !apiKey) {
+                alert('请输入问题和API密钥');
+                return;
+            }
+
+            // 清空用户输入框
+            document.getElementById('userInput').value = '';
+
+            // 显示用户消息
+            displayMessage(userInput, 'user');
+
+            // 创建一个新的控制器
+            controller = new AbortController();
+            const signal = controller.signal;
+
+            const requestBody = {
+                model: 'ashui-5.0',
+                messages: [{ role: 'user', content: userInput }],
+                stream: true
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify(requestBody),
+                    signal: signal
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error('Network response was not ok. ' + errorText);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let botResponse = '';
+                let messageElement = displayMessage('', 'bot', true); // 创建一个空的消息元素用于更新
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n').filter(line => line.trim() !== '');
+                    for (const line of lines) {
+                        const data = line.replace(/^data: /, '');
+                        if (data === '[DONE]') {
+                            return; // 完成读取
+                        }
+                        try {
+                            const json = JSON.parse(data);
+                            if (json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content) {
+                                botResponse += json.choices[0].delta.content;
+                                updateMessage(messageElement, botResponse); // 更新消息内容
+                            }
+                        } catch (e) {
+                            console.error('解析错误:', e);
+                        }
+                    }
+                }
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    displayMessage('请求已被中断。', 'bot');
+                } else {
+                    displayMessage('请求失败: ' + error.message, 'bot');
+                }
+            }
+        }
+
+        function abortRequest() {
+            if (controller) {
+                controller.abort();
+            }
+        }
+
+        function clearConversation() {
+            const conversation = document.getElementById('conversation');
+            conversation.innerHTML = '';
+        }
+
+        function displayMessage(message, type, isTemporary = false) {
+            const conversation = document.getElementById('conversation');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message ' + type;
+            messageElement.innerHTML = `
+                <span>${message}</span>
+                <div class="actions">
+                    <button onclick="copyToClipboard('${message}')">复制</button>
+                    <button onclick="loadToInput('${message}')">载入</button>
+                </div>
+            `;
+            conversation.appendChild(messageElement);
+            conversation.scrollTop = conversation.scrollHeight;
+
+            return messageElement;
+        }
+
+        function updateMessage(element, message) {
+            const span = element.querySelector('span');
+            span.textContent = message;
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('已复制到剪贴板');
+            }).catch(err => {
+                alert('复制失败: ', err);
+            });
+        }
+
+        function loadToInput(text) {
+            document.getElementById('userInput').value = text;
+        }
+    </script>
+</body>
+</html>
